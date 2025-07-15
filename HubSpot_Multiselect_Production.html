@@ -26,7 +26,22 @@
       }
     });
     
-    if (!targetGroup) return;
+    // Fallback: if no specific field found, look for any large checkbox group (for testing)
+    if (!targetGroup && checkboxGroups.length > 0) {
+      for (const group of checkboxGroups) {
+        const checkboxes = group.querySelectorAll('input[type="checkbox"]');
+        if (checkboxes.length > 10) { // Assume large checkbox groups are multi-language fields
+          console.log('Using fallback: found checkbox group with', checkboxes.length, 'options');
+          targetGroup = group;
+          break;
+        }
+      }
+    }
+    
+    if (!targetGroup) {
+      console.warn('HubSpot multiselect: No target field found. Available checkbox groups:', checkboxGroups.length);
+      return;
+    }
     
     const checkboxes = targetGroup.querySelectorAll('input[type="checkbox"]');
     if (checkboxes.length === 0) return;
@@ -36,6 +51,12 @@
     const fieldContainer = targetGroup.closest('.hs-form-field');
     const fieldLabel = fieldContainer?.querySelector('label');
     const labelText = fieldLabel ? fieldLabel.textContent : 'Target Language(s)*';
+    
+    // Ensure we have a valid field container before proceeding
+    if (!fieldContainer) {
+      console.error('Could not find field container for multiselect');
+      return;
+    }
     
     const checkboxData = Array.from(checkboxes).map(cb => ({
       value: cb.value,
