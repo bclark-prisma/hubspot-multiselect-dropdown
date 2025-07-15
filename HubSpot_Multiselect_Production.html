@@ -1,16 +1,41 @@
 <script>
-// HubSpot Multiselect Enhancement - Production Version
-// FormData Injection Method - Cross-browser compatible
 (function() {
-  // Minimal CSS injection
   const style = document.createElement('style');
   style.textContent = `
-.hsfc-DropdownOptions__List__ListItem--multi-selected{background-color:#e8f4f8!important;font-weight:600}
-.hsfc-DropdownOptions__List__ListItem--multi-selected::before{content:"✓ ";color:#0073aa;font-weight:bold}
-.hsfc-DropdownOptions__List__ListItem.hidden{display:none!important}
-.hsfc-DropdownOptions__NoResults{padding:12px;color:#666;font-style:italic;text-align:center;display:none}
-.hsfc-DropdownOptions{position:absolute!important;top:100%!important;left:0!important;right:0!important}
-.hsfc-DropdownOptions__List{max-height:175px!important;overflow-y:auto!important}
+    .hsfc-DropdownOptions__List__ListItem--multi-selected {
+      background-color: #e8f4f8 !important;
+      font-weight: 600;
+    }
+    
+    .hsfc-DropdownOptions__List__ListItem--multi-selected::before {
+      content: "✓ ";
+      color: #0073aa;
+      font-weight: bold;
+    }
+    
+    .hsfc-DropdownOptions__List__ListItem.hidden {
+      display: none !important;
+    }
+    
+    .hsfc-DropdownOptions__NoResults {
+      padding: 12px;
+      color: #666;
+      font-style: italic;
+      text-align: center;
+      display: none;
+    }
+    
+    .hsfc-DropdownOptions {
+      position: absolute !important;
+      top: 100% !important;
+      left: 0 !important;
+      right: 0 !important;
+    }
+    
+    .hsfc-DropdownOptions__List {
+      max-height: 175px !important;
+      overflow-y: auto !important;
+    }
   `;
   document.head.appendChild(style);
   
@@ -18,7 +43,6 @@
     const checkboxGroups = document.querySelectorAll('.hsfc-CheckboxFieldGroup');
     let targetGroup = null;
     
-    // Find target field - UPDATE THIS SELECTOR FOR YOUR FIELD
     checkboxGroups.forEach(group => {
       const languageCheckboxes = group.querySelectorAll('input[name*="target_languages_multi"]');
       if (languageCheckboxes.length > 0) {
@@ -26,200 +50,248 @@
       }
     });
     
-    // Fallback: if no specific field found, look for any large checkbox group (for testing)
-    if (!targetGroup && checkboxGroups.length > 0) {
-      for (const group of checkboxGroups) {
-        const checkboxes = group.querySelectorAll('input[type="checkbox"]');
-        if (checkboxes.length > 10) { // Assume large checkbox groups are multi-language fields
-          console.log('Using fallback: found checkbox group with', checkboxes.length, 'options');
-          targetGroup = group;
-          break;
-        }
-      }
+    if (!targetGroup || targetGroup.dataset.enhanced) {
+      return targetGroup && targetGroup.dataset.enhanced;
     }
     
-    if (!targetGroup) {
-      console.warn('HubSpot multiselect: No target field found. Available checkbox groups:', checkboxGroups.length);
-      return;
-    }
+    targetGroup.dataset.enhanced = 'true';
     
-    const checkboxes = targetGroup.querySelectorAll('input[type="checkbox"]');
-    if (checkboxes.length === 0) return;
+    const checkboxes = targetGroup.querySelectorAll('input[name*="target_languages_multi"]');
+    const fieldName = checkboxes[0] ? checkboxes[0].name : 'target_languages_multi';
+
+    const checkboxMap = new Map();
+    checkboxes.forEach(cb => checkboxMap.set(cb.value, cb));
     
-    // Extract field data before DOM removal
-    const fieldName = checkboxes[0].name;
-    const fieldContainer = targetGroup.closest('.hs-form-field');
-    const fieldLabel = fieldContainer?.querySelector('label');
+    const formField = targetGroup.closest('.hs-form-field');
+    const fieldLabel = targetGroup.querySelector('label.hsfc-FieldLabel') || 
+                      formField?.querySelector('label:first-child');
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'multiselect-wrapper';
+    
+    const labelElement = document.createElement('label');
     const labelText = fieldLabel ? fieldLabel.textContent : 'Target Language(s)*';
+    const hasAsterisk = labelText.includes('*');
+    const textWithoutAsterisk = labelText.replace('*', '').trim();
     
-    // Ensure we have a valid field container before proceeding
-    if (!fieldContainer) {
-      console.error('Could not find field container for multiselect');
-      return;
+    if (fieldLabel) {
+      labelElement.className = fieldLabel.className;
+    } else {
+      labelElement.className = 'hsfc-FieldLabel';
     }
     
-    const checkboxData = Array.from(checkboxes).map(cb => ({
-      value: cb.value,
-      label: cb.value.includes(',') ? cb.value.split(',')[0].trim() : cb.value
-    }));
+    if (hasAsterisk) {
+      labelElement.innerHTML = textWithoutAsterisk + '<span style="color: #d73502;">*</span>';
+    } else {
+      labelElement.textContent = labelText;
+    }
     
-    // Remove original checkboxes completely
-    targetGroup.remove();
+    labelElement.style.marginBottom = '8px';
+    wrapper.appendChild(labelElement);
     
-    // Create custom dropdown
-    const dropdownContainer = document.createElement('div');
-    dropdownContainer.className = 'hsfc-DropdownInput';
+    const container = document.createElement('div');
+    container.className = 'hsfc-DropdownInput';
+    container.setAttribute('data-hsfc-id', 'DropdownInput');
     
     const displayInput = document.createElement('input');
     displayInput.className = 'hsfc-TextInput';
     displayInput.type = 'text';
-    displayInput.placeholder = 'Select languages...';
     displayInput.readOnly = true;
+    displayInput.placeholder = 'Select languages';
+    displayInput.value = 'Select languages';
+    displayInput.id = 'hsfc_display_' + Math.random().toString(36).slice(2, 8);
+    labelElement.setAttribute('for', displayInput.id);
     
     const caret = document.createElement('div');
     caret.className = 'hsfc-DropdownInput__Caret';
-    caret.innerHTML = '<svg viewBox="0 0 12 12" width="12" height="12"><path d="M2 4l4 4 4-4" stroke="currentColor" fill="none" stroke-width="2"/></svg>';
+    caret.innerHTML = '<span></span>';
     
-    const optionsContainer = document.createElement('div');
-    optionsContainer.className = 'hsfc-DropdownOptions';
-    optionsContainer.style.display = 'none';
+    const dropdown = document.createElement('div');
+    dropdown.className = 'hsfc-DropdownOptions';
+    dropdown.style.display = 'none';
     
     const searchContainer = document.createElement('div');
     searchContainer.className = 'hsfc-DropdownOptions__Search';
-    
     const searchInput = document.createElement('input');
     searchInput.className = 'hsfc-TextInput';
     searchInput.type = 'text';
-    searchInput.placeholder = 'Search languages...';
+    searchInput.placeholder = 'Search';
+    searchContainer.appendChild(searchInput);
     
-    const optionsList = document.createElement('div');
+    const optionsList = document.createElement('ul');
     optionsList.className = 'hsfc-DropdownOptions__List';
     
     const noResults = document.createElement('div');
     noResults.className = 'hsfc-DropdownOptions__NoResults';
-    noResults.textContent = 'No results found';
+    noResults.textContent = 'No languages found';
+    noResults.style.display = 'none';
     
-    // Build dropdown structure
-    searchContainer.appendChild(searchInput);
-    optionsContainer.appendChild(searchContainer);
-    optionsContainer.appendChild(optionsList);
-    optionsContainer.appendChild(noResults);
-    dropdownContainer.appendChild(displayInput);
-    dropdownContainer.appendChild(caret);
-    dropdownContainer.appendChild(optionsContainer);
-    fieldContainer.appendChild(dropdownContainer);
+    dropdown.appendChild(searchContainer);
+    dropdown.appendChild(optionsList);
+    dropdown.appendChild(noResults);
     
-    // State management
-    const selectedValues = new Set();
+    container.appendChild(displayInput);
+    container.appendChild(caret);
+    container.appendChild(dropdown);
     
-    // Populate options
-    function renderOptions() {
-      optionsList.innerHTML = '';
+    wrapper.appendChild(container);
+    
+    checkboxes.forEach(originalCheckbox => {
+      const labelText = originalCheckbox.value.includes(',') 
+        ? originalCheckbox.value.split(',')[0].trim()
+        : originalCheckbox.value;
       
-      // Selected items first
-      const selectedItems = checkboxData.filter(item => selectedValues.has(item.value));
-      const unselectedItems = checkboxData.filter(item => !selectedValues.has(item.value));
+      const option = document.createElement('li');
+      option.className = 'hsfc-DropdownOptions__List__ListItem';
+      option.tabIndex = 0;
+      option.textContent = labelText;
+      option.dataset.searchText = labelText.toLowerCase();
+      option.dataset.value = originalCheckbox.value;
       
-      [...selectedItems, ...unselectedItems].forEach(item => {
-        const option = document.createElement('div');
-        option.className = 'hsfc-DropdownOptions__List__ListItem';
-        option.textContent = item.label;
-        option.dataset.value = item.value;
-        
-        if (selectedValues.has(item.value)) {
-          option.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
-        }
-        
-        optionsList.appendChild(option);
-      });
-    }
+      if (originalCheckbox.checked) {
+        option.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
+      }
+      
+      optionsList.appendChild(option);
+    });
+    
+    let selectedValues = new Set();
     
     function updateDisplayText() {
-      const count = selectedValues.size;
-      displayInput.value = count === 0 ? '' : 
-        count === 1 ? Array.from(selectedValues)[0].split(',')[0].trim() :
-        `${count} languages selected`;
-    }
-    
-    function toggleDropdown() {
-      const isOpen = optionsContainer.style.display !== 'none';
-      optionsContainer.style.display = isOpen ? 'none' : 'block';
-      if (!isOpen) {
-        searchInput.value = '';
-        filterOptions();
-        searchInput.focus();
+      const selected = Array.from(optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem--multi-selected'))
+        .map(item => item.textContent.trim());
+      
+      if (selected.length === 0) {
+        displayInput.value = 'Select languages';
+      } else if (selected.length > 2) {
+        displayInput.value = `${selected.length} languages selected`;
+      } else {
+        displayInput.value = selected.join(', ');
       }
+      
+      selectedValues.clear();
+      Array.from(optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem--multi-selected'))
+        .forEach(item => selectedValues.add(item.dataset.value));
     }
     
     function filterOptions() {
-      const query = searchInput.value.toLowerCase();
+      const searchTerm = searchInput.value.toLowerCase();
       const options = optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem');
       let visibleCount = 0;
       
       options.forEach(option => {
-        const isVisible = option.textContent.toLowerCase().includes(query);
-        option.classList.toggle('hidden', !isVisible);
-        if (isVisible) visibleCount++;
+        if (option.dataset.searchText.includes(searchTerm)) {
+          option.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          option.classList.add('hidden');
+        }
       });
       
       noResults.style.display = visibleCount === 0 ? 'block' : 'none';
     }
+
+    function reorderOptions() {
+      const allOptions = Array.from(optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem'));
+      const selectedOptions = allOptions.filter(opt => opt.classList.contains('hsfc-DropdownOptions__List__ListItem--multi-selected'));
+      const unselectedOptions = allOptions.filter(opt => !opt.classList.contains('hsfc-DropdownOptions__List__ListItem--multi-selected'));
+      
+      selectedOptions.sort((a, b) => a.textContent.localeCompare(b.textContent));
+      
+      optionsList.innerHTML = '';
+      selectedOptions.forEach(opt => optionsList.appendChild(opt));
+      unselectedOptions.forEach(opt => optionsList.appendChild(opt));
+    }
     
-    // Event listeners
+    function toggleDropdown() {
+      const isVisible = dropdown.style.display === 'block';
+      dropdown.style.display = isVisible ? 'none' : 'block';
+      
+      if (!isVisible) {
+        searchInput.value = '';
+        reorderOptions();
+        const options = optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem');
+        options.forEach(option => option.classList.remove('hidden'));
+        noResults.style.display = 'none';
+        setTimeout(() => searchInput.focus(), 10);
+      }
+    }
+    
     displayInput.addEventListener('click', toggleDropdown);
     caret.addEventListener('click', toggleDropdown);
-    
     searchInput.addEventListener('input', filterOptions);
-    searchInput.addEventListener('keydown', e => {
-      if (e.key === 'Escape') toggleDropdown();
+    
+    dropdown.addEventListener('click', function(e) {
+      e.stopPropagation();
     });
     
-    optionsList.addEventListener('click', e => {
+    optionsList.addEventListener('click', function(e) {
       if (e.target.classList.contains('hsfc-DropdownOptions__List__ListItem')) {
-        const value = e.target.dataset.value;
+        const option = e.target;
+        const optionValue = option.dataset.value;
         
-        if (selectedValues.has(value)) {
-          selectedValues.delete(value);
-          e.target.classList.remove('hsfc-DropdownOptions__List__ListItem--multi-selected');
+        const isSelected = option.classList.contains('hsfc-DropdownOptions__List__ListItem--multi-selected');
+        
+        if (isSelected) {
+          option.classList.remove('hsfc-DropdownOptions__List__ListItem--multi-selected');
+          selectedValues.delete(optionValue);
         } else {
-          selectedValues.add(value);
-          e.target.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
+          option.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
+          selectedValues.add(optionValue);
         }
         
         updateDisplayText();
-        renderOptions(); // Re-render to move selected items to top
       }
     });
     
-    document.addEventListener('click', e => {
-      if (!dropdownContainer.contains(e.target)) {
-        optionsContainer.style.display = 'none';
+    document.addEventListener('click', function(e) {
+      if (!container.contains(e.target)) {
+        dropdown.style.display = 'none';
       }
     });
     
-    renderOptions();
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        dropdown.style.display = 'none';
+        displayInput.focus();
+      }
+    });
     
-    // FormData injection setup
-    const form = fieldContainer.closest('form');
+    const form = targetGroup.closest('form') || document.querySelector('form');
+    
+    targetGroup.parentNode.insertBefore(wrapper, targetGroup);
+    targetGroup.remove();
+    
+    if (fieldLabel) {
+      fieldLabel.style.display = 'none';
+    }
+    
+    updateDisplayText();
     if (form) {
-      let isOurFormSubmission = false;
       const originalFormData = window.FormData;
+      let isOurFormSubmission = false;
       
-      // Override FormData constructor
+      form.addEventListener('submit', function(e) {
+        isOurFormSubmission = true;
+        setTimeout(() => {
+          isOurFormSubmission = false;
+        }, 5000);
+      }, true);
+      
       window.FormData = function(formElement, submitter) {
         const formData = new originalFormData(formElement, submitter);
         
         if (isOurFormSubmission && formElement === form) {
-          // Remove any existing entries
           const keysToDelete = [];
           for (let key of formData.keys()) {
-            if (key.includes(fieldName.split('/')[1])) {
+            if (key.includes('target_languages_multi')) {
               keysToDelete.push(key);
             }
           }
-          keysToDelete.forEach(key => formData.delete(key));
+          keysToDelete.forEach(key => {
+            formData.delete(key);
+          });
           
-          // Inject our data
           if (selectedValues.size > 0) {
             const semicolonDelimitedValue = Array.from(selectedValues).join(';');
             formData.append(fieldName, semicolonDelimitedValue);
@@ -229,40 +301,42 @@
         return formData;
       };
       
-      // Intercept form submission
-      form.addEventListener('submit', () => {
-        isOurFormSubmission = true;
-        // Reset flag after a delay
-        setTimeout(() => { isOurFormSubmission = false; }, 1000);
-      }, true);
+      Object.setPrototypeOf(window.FormData.prototype, originalFormData.prototype);
+      Object.defineProperty(window.FormData, 'name', { value: 'FormData' });
+      
+      form.addEventListener('formdata', function(e) {
+        if (selectedValues.size > 0) {
+          const semicolonDelimitedValue = Array.from(selectedValues).join(';');
+          
+          const keysToDelete = [];
+          for (let key of e.formData.keys()) {
+            if (key.includes('target_languages_multi')) {
+              keysToDelete.push(key);
+            }
+          }
+          keysToDelete.forEach(key => {
+            e.formData.delete(key);
+          });
+          
+          e.formData.append(fieldName, semicolonDelimitedValue);
+        }
+      });
     }
+    
+    return true;
   }
   
-  // Initialize when HubSpot form is ready
-  function waitForHubSpotForm() {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', waitForHubSpotForm);
-      return;
-    }
-    
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    function trySetup() {
-      const checkboxGroups = document.querySelectorAll('.hsfc-CheckboxFieldGroup');
-      if (checkboxGroups.length > 0) {
-        setupMultiselect();
-      } else if (attempts < maxAttempts) {
-        attempts++;
-        setTimeout(trySetup, 1000);
-      }
-    }
-    
-    trySetup();
-  }
+  window.addEventListener('hs-form-event:on-ready', function(event) {
+    setTimeout(() => setupMultiselect(), 100);
+  });
   
-  // Listen for HubSpot form events
-  window.addEventListener('hs-form-event:on-ready', setupMultiselect);
-  waitForHubSpotForm();
+  let attempts = 0;
+  const interval = setInterval(() => {
+    attempts++;
+    if (setupMultiselect() || attempts >= 20) {
+      clearInterval(interval);
+    }
+  }, 500);
+  
 })();
 </script> 
