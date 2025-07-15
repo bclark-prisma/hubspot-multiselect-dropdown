@@ -1,0 +1,247 @@
+<script>
+// HubSpot Multiselect Enhancement - Production Version
+// FormData Injection Method - Cross-browser compatible
+(function() {
+  // Minimal CSS injection
+  const style = document.createElement('style');
+  style.textContent = `
+.hsfc-DropdownOptions__List__ListItem--multi-selected{background-color:#e8f4f8!important;font-weight:600}
+.hsfc-DropdownOptions__List__ListItem--multi-selected::before{content:"✓ ";color:#0073aa;font-weight:bold}
+.hsfc-DropdownOptions__List__ListItem.hidden{display:none!important}
+.hsfc-DropdownOptions__NoResults{padding:12px;color:#666;font-style:italic;text-align:center;display:none}
+.hsfc-DropdownOptions{position:absolute!important;top:100%!important;left:0!important;right:0!important}
+.hsfc-DropdownOptions__List{max-height:175px!important;overflow-y:auto!important}
+  `;
+  document.head.appendChild(style);
+  
+  function setupMultiselect() {
+    const checkboxGroups = document.querySelectorAll('.hsfc-CheckboxFieldGroup');
+    let targetGroup = null;
+    
+    // Find target field - UPDATE THIS SELECTOR FOR YOUR FIELD
+    checkboxGroups.forEach(group => {
+      const languageCheckboxes = group.querySelectorAll('input[name*="target_languages_multi"]');
+      if (languageCheckboxes.length > 0) {
+        targetGroup = group;
+      }
+    });
+    
+    if (!targetGroup) return;
+    
+    const checkboxes = targetGroup.querySelectorAll('input[type="checkbox"]');
+    if (checkboxes.length === 0) return;
+    
+    // Extract field data before DOM removal
+    const fieldName = checkboxes[0].name;
+    const fieldContainer = targetGroup.closest('.hs-form-field');
+    const fieldLabel = fieldContainer?.querySelector('label');
+    const labelText = fieldLabel ? fieldLabel.textContent : 'Target Language(s)*';
+    
+    const checkboxData = Array.from(checkboxes).map(cb => ({
+      value: cb.value,
+      label: cb.value.includes(',') ? cb.value.split(',')[0].trim() : cb.value
+    }));
+    
+    // Remove original checkboxes completely
+    targetGroup.remove();
+    
+    // Create custom dropdown
+    const dropdownContainer = document.createElement('div');
+    dropdownContainer.className = 'hsfc-DropdownInput';
+    
+    const displayInput = document.createElement('input');
+    displayInput.className = 'hsfc-TextInput';
+    displayInput.type = 'text';
+    displayInput.placeholder = 'Select languages...';
+    displayInput.readOnly = true;
+    
+    const caret = document.createElement('div');
+    caret.className = 'hsfc-DropdownInput__Caret';
+    caret.innerHTML = '<svg viewBox="0 0 12 12" width="12" height="12"><path d="M2 4l4 4 4-4" stroke="currentColor" fill="none" stroke-width="2"/></svg>';
+    
+    const optionsContainer = document.createElement('div');
+    optionsContainer.className = 'hsfc-DropdownOptions';
+    optionsContainer.style.display = 'none';
+    
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'hsfc-DropdownOptions__Search';
+    
+    const searchInput = document.createElement('input');
+    searchInput.className = 'hsfc-TextInput';
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Search languages...';
+    
+    const optionsList = document.createElement('div');
+    optionsList.className = 'hsfc-DropdownOptions__List';
+    
+    const noResults = document.createElement('div');
+    noResults.className = 'hsfc-DropdownOptions__NoResults';
+    noResults.textContent = 'No results found';
+    
+    // Build dropdown structure
+    searchContainer.appendChild(searchInput);
+    optionsContainer.appendChild(searchContainer);
+    optionsContainer.appendChild(optionsList);
+    optionsContainer.appendChild(noResults);
+    dropdownContainer.appendChild(displayInput);
+    dropdownContainer.appendChild(caret);
+    dropdownContainer.appendChild(optionsContainer);
+    fieldContainer.appendChild(dropdownContainer);
+    
+    // State management
+    const selectedValues = new Set();
+    
+    // Populate options
+    function renderOptions() {
+      optionsList.innerHTML = '';
+      
+      // Selected items first
+      const selectedItems = checkboxData.filter(item => selectedValues.has(item.value));
+      const unselectedItems = checkboxData.filter(item => !selectedValues.has(item.value));
+      
+      [...selectedItems, ...unselectedItems].forEach(item => {
+        const option = document.createElement('div');
+        option.className = 'hsfc-DropdownOptions__List__ListItem';
+        option.textContent = item.label;
+        option.dataset.value = item.value;
+        
+        if (selectedValues.has(item.value)) {
+          option.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
+        }
+        
+        optionsList.appendChild(option);
+      });
+    }
+    
+    function updateDisplayText() {
+      const count = selectedValues.size;
+      displayInput.value = count === 0 ? '' : 
+        count === 1 ? Array.from(selectedValues)[0].split(',')[0].trim() :
+        `${count} languages selected`;
+    }
+    
+    function toggleDropdown() {
+      const isOpen = optionsContainer.style.display !== 'none';
+      optionsContainer.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) {
+        searchInput.value = '';
+        filterOptions();
+        searchInput.focus();
+      }
+    }
+    
+    function filterOptions() {
+      const query = searchInput.value.toLowerCase();
+      const options = optionsList.querySelectorAll('.hsfc-DropdownOptions__List__ListItem');
+      let visibleCount = 0;
+      
+      options.forEach(option => {
+        const isVisible = option.textContent.toLowerCase().includes(query);
+        option.classList.toggle('hidden', !isVisible);
+        if (isVisible) visibleCount++;
+      });
+      
+      noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+    
+    // Event listeners
+    displayInput.addEventListener('click', toggleDropdown);
+    caret.addEventListener('click', toggleDropdown);
+    
+    searchInput.addEventListener('input', filterOptions);
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape') toggleDropdown();
+    });
+    
+    optionsList.addEventListener('click', e => {
+      if (e.target.classList.contains('hsfc-DropdownOptions__List__ListItem')) {
+        const value = e.target.dataset.value;
+        
+        if (selectedValues.has(value)) {
+          selectedValues.delete(value);
+          e.target.classList.remove('hsfc-DropdownOptions__List__ListItem--multi-selected');
+        } else {
+          selectedValues.add(value);
+          e.target.classList.add('hsfc-DropdownOptions__List__ListItem--multi-selected');
+        }
+        
+        updateDisplayText();
+        renderOptions(); // Re-render to move selected items to top
+      }
+    });
+    
+    document.addEventListener('click', e => {
+      if (!dropdownContainer.contains(e.target)) {
+        optionsContainer.style.display = 'none';
+      }
+    });
+    
+    renderOptions();
+    
+    // FormData injection setup
+    const form = fieldContainer.closest('form');
+    if (form) {
+      let isOurFormSubmission = false;
+      const originalFormData = window.FormData;
+      
+      // Override FormData constructor
+      window.FormData = function(formElement, submitter) {
+        const formData = new originalFormData(formElement, submitter);
+        
+        if (isOurFormSubmission && formElement === form) {
+          // Remove any existing entries
+          const keysToDelete = [];
+          for (let key of formData.keys()) {
+            if (key.includes(fieldName.split('/')[1])) {
+              keysToDelete.push(key);
+            }
+          }
+          keysToDelete.forEach(key => formData.delete(key));
+          
+          // Inject our data
+          if (selectedValues.size > 0) {
+            const semicolonDelimitedValue = Array.from(selectedValues).join(';');
+            formData.append(fieldName, semicolonDelimitedValue);
+          }
+        }
+        
+        return formData;
+      };
+      
+      // Intercept form submission
+      form.addEventListener('submit', () => {
+        isOurFormSubmission = true;
+        // Reset flag after a delay
+        setTimeout(() => { isOurFormSubmission = false; }, 1000);
+      }, true);
+    }
+  }
+  
+  // Initialize when HubSpot form is ready
+  function waitForHubSpotForm() {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', waitForHubSpotForm);
+      return;
+    }
+    
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    function trySetup() {
+      const checkboxGroups = document.querySelectorAll('.hsfc-CheckboxFieldGroup');
+      if (checkboxGroups.length > 0) {
+        setupMultiselect();
+      } else if (attempts < maxAttempts) {
+        attempts++;
+        setTimeout(trySetup, 1000);
+      }
+    }
+    
+    trySetup();
+  }
+  
+  // Listen for HubSpot form events
+  window.addEventListener('hs-form-event:on-ready', setupMultiselect);
+  waitForHubSpotForm();
+})();
+</script> 
